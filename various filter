@@ -1,0 +1,102 @@
+filter {
+   grok {
+    match => { "message"=>[ '(%{INT:level})?\,((?:[^:]+))?:"(%{DATA:reqID})?"\,(?:[^:]+)?:"(%{GREEDYDATA:url})?"\,(?:[^:]+)?:(%{INT:statusCode})?\,(?:[^:]+)?:(%{DATA:duration})?\,(?:[^:]+)?:"(%{DATA:msg})?"', 
+    '(%{INT:level})?\,((?:[^:]+))?:"(%{DATA:reqID})?"\,(?:[^:]+):(%{INT:epoch})?\,(?:[^:]+)?:"(%{GREEDYDATA:url})?"\,(?:[^:]+)?:("%{IP:ip}")?\,(?:[^:]+)?:"(%{DATA:msg})?"']}
+  }
+  date {
+  match => ["epoch", "UNIX_MS"]
+}
+}
+
+
+
+
+
+2.logstash config
+input { stdin { } }
+
+output {
+  elasticsearch { 
+    hosts => ["localhost:9200"]
+    index => "this_log_index_name"
+  }
+  stdout { codec => rubydebug }
+}
+
+
+3.CSV logstash config with filter:
+input {
+  file {
+    path => "*.csv"
+    start_position => "beginning"
+    sincedb_path => "NULL"
+   }
+}
+
+filter {
+  csv {
+    separator => ","
+    columns => ["id", "Name"]
+  }
+}
+
+output {
+  elasticsearch { 
+    hosts => ["localhost:9200"]
+    index => "this_csv_log_index_name"
+  }
+  stdout { codec => rubydebug }
+}
+
+
+
+5.logstash file beat.conf without filter
+input {
+    beats {
+	    type => "logs"
+        port => "5044"
+    }
+}
+
+
+logstash file beat.conf with multiple file beat should create different - different index in elastic search
+input {
+    beats {
+	    type => "logs"
+        port => "5044"
+    }
+}
+
+filter {
+    json {
+        source => "message"
+        target => "log"
+    }
+    if [log][@l] {
+    mutate { add_field => { "@level" => "%{[log][@l]}" } }
+    } else {
+    mutate { add_field => { "@level" => "Information" } }
+    }
+}
+
+output {
+  if "Error" == [@level]{
+    elasticsearch {
+      hosts => ["localhost:9200"]
+      index => "error_logs"
+    }
+  }
+  else if "Serilog.LogFile.WebApi" in [ServiceLogAppName]{
+    elasticsearch {
+      hosts => ["localhost:9200"]
+      index => "serilog.logfile.webapi"
+    }
+  }
+  else {
+    elasticsearch {
+      hosts => ["localhost:9200"]
+      index => "other.log"
+    }
+  }
+  stdout { codec => rubydebug }
+}
